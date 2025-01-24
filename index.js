@@ -1,7 +1,5 @@
 import * as THREE from "three";
 import { OrbitControls } from 'jsm/controls/OrbitControls.js';
-import { GLTFLoader } from 'jsm/loaders/GLTFLoader.js';
-//import getStarfield from "./src/getStarfield.js";
 import { getFresnelMat } from "./src/getFresnelMat.js";
 
 // Fetch the JSON locations file
@@ -15,8 +13,6 @@ fetch('./database/locations.json')
     //set window variables
     const w = window.innerWidth;
     const h = window.innerHeight;
-    //const w = 400;
-    //const h = 300;
 
     //Set up Scene/camera/renderer
     const scene = new THREE.Scene();
@@ -25,7 +21,7 @@ fetch('./database/locations.json')
     const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
     renderer.setSize(w, h);
     document.body.appendChild(renderer.domElement);
-    // THREE.ColorManagement.enabled = true;
+    THREE.ColorManagement.enabled = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 
@@ -83,7 +79,6 @@ fetch('./database/locations.json')
     sunLight.position.set(-20, 0.5, 1.5);
     scene.add(sunLight);
 
-
     // Add locations to the earth
     const locationsMesh = [];
     const labels = [];
@@ -139,7 +134,7 @@ fetch('./database/locations.json')
       // Scale the sprite to make it bigger
       label.scale.set(5, 2.5, 10); // Adjust the scale values as needed to make the label bigger or smaller
 
-      // Position the label at the end of the cylinder + 1 unit along the normal vector
+      // Position the label at the end of the cylinder + .2 unit along the normal vector
       label.position.set(x, y, z);
       label.position.add(normal.clone().multiplyScalar(labelHeight + .2));
       return label;
@@ -165,7 +160,7 @@ fetch('./database/locations.json')
           const testWidth = metrics.width;
           if (testWidth > maxWidth && n > 0) {
             const lineWidth = context.measureText(line).width;
-            context.fillText(line, (canvas.width - lineWidth) / 2, y);
+            context.fillText(line, (canvas.width - lineWidth) / 2, y); //centre text 
             line = words[n] + ' ';
             y += lineHeight;
           } else {
@@ -173,7 +168,7 @@ fetch('./database/locations.json')
           }
         }
         const lineWidth = context.measureText(line).width;
-        context.fillText(line, (canvas.width - lineWidth) / 2, y);
+        context.fillText(line, (canvas.width - lineWidth) / 2, y); //centre text
       }
 
       // Wrap and draw the text
@@ -186,6 +181,8 @@ fetch('./database/locations.json')
     function animate() {
       requestAnimationFrame(animate);
       const rotationAmount = 0.0002;
+
+      // Amimate locations and labels
       for (let i = 0; i < locations.length; i++) {
         locations[i].longitude += rotationAmount * 180 / Math.PI;
         const coords = getCartesianCoords(locations[i].latitude, locations[i].longitude, 20);
@@ -208,9 +205,6 @@ fetch('./database/locations.json')
       lightsMesh.rotation.y += rotationAmount;
       cloudsMesh.rotation.y += rotationAmount * 1.5;
       glowMesh.rotation.y += rotationAmount;
-      //        if (lastTextMesh != null) {
-      //          lastTextMesh.lookAt(camera.position);
-      //        }
 
       renderer.render(scene, camera);
     }
