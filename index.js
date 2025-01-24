@@ -40,7 +40,7 @@ fetch('./database/locations.json')
     const detail = 12;
     const loader = new THREE.TextureLoader();
     const geometry = new THREE.IcosahedronGeometry(20, detail);
-    
+
     // Load Textures
     const material = new THREE.MeshPhongMaterial({
       map: loader.load("./textures/BlueMarble.jpg"),
@@ -86,14 +86,37 @@ fetch('./database/locations.json')
 
     // Add locations to the earth
     const locationsMesh = [];
+    const labels = [];
+    const labelHeight = 2;
+
     for (let i = 0; i < locations.length; i++) {
-      const coords = getCartesianCoords(locations[i].latitude, locations[i].longitude, 19.9);
+      const coords = getCartesianCoords(locations[i].latitude, locations[i].longitude, 20);
+      // Calculate the normal vector to the surface of the sphere at the given point      
+      const normal = new THREE.Vector3(coords.x, coords.y, coords.z).normalize();
+
+      const cylinderGeometry = new THREE.CylinderGeometry(.05, .05, labelHeight, 32);
+      // Translate the geometry so that the tip is at the origin
+      cylinderGeometry.translate(0, labelHeight / 2, 0);
+
       locationsMesh[i] = new THREE.Mesh(
-        new THREE.SphereGeometry(.2, 20, 20),
+        cylinderGeometry,
         new THREE.MeshBasicMaterial({ color: 0xff0000 })
       );
+
       locationsMesh[i].position.set(coords.x, coords.y, coords.z);
+
+      // Align the cylinder with the surface normal
+      const quaternion = new THREE.Quaternion();
+      quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+      locationsMesh[i].quaternion.copy(quaternion);
+
+      // Translate the cylinder so that the tip is at the surface
+      locationsMesh[i].position.add(normal.clone().multiplyScalar(labelHeight / 2)); // labelHeight/2 is half the height of the cylinder
       scene.add(locationsMesh[i]);
+
+      // Add text label
+      labels[i] = textLabel(locations[i].name, coords.x, coords.y, coords.z, normal);
+      scene.add(labels[i]);
     }
 
     // Calculate the x,y,z coordinates of a point on a sphere
@@ -106,40 +129,57 @@ fetch('./database/locations.json')
       return { x, y, z };
     }
 
+    //function to create text label
+    function textLabel(text, x, y, z, normal) {
+      // Create the label
+      const labelTexture = new THREE.CanvasTexture(createLabelCanvas(text, 'rgba(22, 255, 0, 1.0)'));
+      const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture });
+      const label = new THREE.Sprite(labelMaterial);
 
-    //Create text label
-    function textLabel(text, x, y, z) {
-      // Create a canvas and draw text on it
+      // Scale the sprite to make it bigger
+      label.scale.set(5, 2.5, 10); // Adjust the scale values as needed to make the label bigger or smaller
+
+      // Position the label at the end of the cylinder + 1 unit along the normal vector
+      label.position.set(x, y, z);
+      label.position.add(normal.clone().multiplyScalar(labelHeight + .2));
+      return label;
+    }
+
+
+    function createLabelCanvas(text, color) {
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
-      context.font = '34px Arial';
-      context.textAlign = 'center';
-      const textsize = context.measureText(text)
-      canvas.width = textsize.width + 50;
-      canvas.height = canvas.width / 3;
-      context.fillStyle = 'white';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = 'Blue';
-      context.fillRect(5, 5, canvas.width - 10, canvas.height - 10);
-      context.fillStyle = 'White';
-      context.font = '34px Arial';
-      context.textAlign = 'center';
-      context.measureText(text)
-      context.fillText(text, canvas.width / 2, canvas.height / 2);
+      canvas.width = 256; // Set canvas width
+      canvas.height = 128; // Set canvas height to accommodate multiple lines
+      context.font = 'Bold 20px Arial';
+      context.fillStyle = color;
+      //context.fillText(text, 0, 80);
 
-      // Create a texture from the canvas
-      const texture = new THREE.CanvasTexture(canvas);
+      // Function to wrap text
+      function wrapText(context, text, x, y, maxWidth, lineHeight) {
+        const words = text.split(' ');
+        let line = '';
+        for (let n = 0; n < words.length; n++) {
+          const testLine = line + words[n] + ' ';
+          const metrics = context.measureText(testLine);
+          const testWidth = metrics.width;
+          if (testWidth > maxWidth && n > 0) {
+            const lineWidth = context.measureText(line).width;
+            context.fillText(line, (canvas.width - lineWidth) / 2, y);
+            line = words[n] + ' ';
+            y += lineHeight;
+          } else {
+            line = testLine;
+          }
+        }
+        const lineWidth = context.measureText(line).width;
+        context.fillText(line, (canvas.width - lineWidth) / 2, y);
+      }
 
-      // Create a plane geometry and apply the texture as its material
-      const geometry = new THREE.PlaneGeometry(5, 2.5);
-      const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.8 });
-      const textMesh = new THREE.Mesh(geometry, material);
-      scene.add(textMesh);
-      textMesh.position.set(x, y, z);
-      textMesh.lookAt(camera.position);
+      // Wrap and draw the text
+      wrapText(context, text, 10, 50, canvas.width - 20, 20); // Adjust x, y, maxWidth, and lineHeight as needed
 
-      // Store the reference to the last added textMesh object lastTextMesh
-      lastTextMesh = textMesh;
+      return canvas;
     }
 
     // Animation Loop
@@ -148,16 +188,29 @@ fetch('./database/locations.json')
       const rotationAmount = 0.0002;
       for (let i = 0; i < locations.length; i++) {
         locations[i].longitude += rotationAmount * 180 / Math.PI;
-        const coords = getCartesianCoords(locations[i].latitude, locations[i].longitude, 19.9);
+        const coords = getCartesianCoords(locations[i].latitude, locations[i].longitude, 20);
         locationsMesh[i].position.set(coords.x, coords.y, coords.z);
+
+        // Recalculate the surface normal
+        const normal = new THREE.Vector3(coords.x, coords.y, coords.z).normalize();
+
+        // Align the cylinder with the surface normal
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+        locationsMesh[i].quaternion.copy(quaternion);
+
+        // Update the label position
+        labels[i].position.set(coords.x, coords.y, coords.z);
+        labels[i].position.add(normal.clone().multiplyScalar(labelHeight + .2));
+
       }
       earthMesh.rotation.y += rotationAmount;
       lightsMesh.rotation.y += rotationAmount;
       cloudsMesh.rotation.y += rotationAmount * 1.5;
       glowMesh.rotation.y += rotationAmount;
-      if (lastTextMesh != null) {
-        lastTextMesh.lookAt(camera.position);
-      }
+      //        if (lastTextMesh != null) {
+      //          lastTextMesh.lookAt(camera.position);
+      //        }
 
       renderer.render(scene, camera);
     }
@@ -168,14 +221,17 @@ fetch('./database/locations.json')
       mouseLoc.y = -(event.clientY / h) * 2 + 1;
       raycaster.setFromCamera(mouseLoc, camera);
       for (let i = 0; i < locations.length; i++) {
-        const intersects = raycaster.intersectObjects([locationsMesh[i]]);
+        const intersects = raycaster.intersectObjects([labels[i]]);
         if (intersects.length > 0) {
-          console.log('Mouse over location');
-          locationsMesh[i].material.color.set(0x00ff00);
-          //woosh.play();
+          console.log('Mouse over location ' + i);
+          const newTexture = createLabelCanvas(locations[i].name, 'rgba(255, 255, 0, 1.0)');
+          labels[i].material.map = new THREE.CanvasTexture(newTexture);
+          labels[i].material.needsUpdate = true;
           { break; }
         } else {
-          locationsMesh[i].material.color.set(0xff0000);
+          const newTexture = createLabelCanvas(locations[i].name, 'rgba(22, 255, 0, 1.0)');
+          labels[i].material.map = new THREE.CanvasTexture(newTexture);
+          labels[i].material.needsUpdate = true;
         }
       }
     }
@@ -186,23 +242,21 @@ fetch('./database/locations.json')
       mouseLoc.y = -(event.clientY / h) * 2 + 1;
       raycaster.setFromCamera(mouseLoc, camera);
       for (let i = 0; i < locations.length; i++) {
-        const intersects = raycaster.intersectObjects([locationsMesh[i]]);
+        const intersects = raycaster.intersectObjects([labels[i]]);
         if (intersects.length > 0) {
-          // Set colour to green
-          locationsMesh[i].material.color.set(0x00ff00);
+          // Set colour to red
+          const newTexture = createLabelCanvas(locations[i].name, 'rgba(255, 0, 0, 1.0)');
+          labels[i].material.map = new THREE.CanvasTexture(newTexture);
+          labels[i].material.needsUpdate = true;
 
-          //Text box with location name and info 
-          const halfwayX = ((camera.position.x + locationsMesh[i].position.x) / 2);
-          const halfwayY = ((camera.position.y + locationsMesh[i].position.y) / 2);
-          const halfwayZ = ((camera.position.z + locationsMesh[i].position.z) / 2);
-          textLabel(locations[i].name, halfwayX, halfwayY, halfwayZ);
-          
           // Speak Name of Location
           const utterance = new SpeechSynthesisUtterance(locations[i].name);
           window.speechSynthesis.speak(utterance);
           { break; }
         } else {
-          locationsMesh[i].material.color.set(0xff0000);
+          const newTexture = createLabelCanvas(locations[i].name, 'rgba(22, 255, 0, 1.0)');
+          labels[i].material.map = new THREE.CanvasTexture(newTexture);
+          labels[i].material.needsUpdate = true;
         }
       }
     }
