@@ -28,6 +28,7 @@ fetch('./database/locations.json')
     //mouse and raycaster
     const mouseLoc = new THREE.Vector2();
     const raycaster = new THREE.Raycaster();
+    raycaster.camera = camera
 
     //Create Earth
     const earthGroup = new THREE.Group();
@@ -111,9 +112,40 @@ fetch('./database/locations.json')
 
       // Add text label
       labels[i] = textLabel(locations[i].name, coords.x, coords.y, coords.z, normal);
+      labels[i].position.set(coords.x, coords.y, coords.z);
       scene.add(labels[i]);
+      if (labels.length > 1) {
+        ajustForOverlappingLabels(labels);
+      }
     }
 
+    // Function to check for overlapping labels
+    function ajustForOverlappingLabels(labels) {
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = i + 1; j < labels.length; j++) {
+          const distance = labels[i].position.distanceTo(labels[j].position);
+          console.log(`Distance between Label ${i} and Label ${j} is ${distance}`);
+          if (distance < labels[i].scale.y / 2) {
+            console.log(`Label ${i} is overlapping with Label ${j}`);
+            //console.log(`Label ${i} height is ${labels[i].scale.y}`);
+            //console.log(locations[i].name)
+            //console.log(locations[j].name)
+            // Move the labels 
+            const overlapAmount = labels[i].scale.y / 2;
+            labels[i].position.add(new THREE.Vector3(0, 0, overlapAmount));
+            labels[i].userData = { overlap: overlapAmount };
+            labels[j].position.add(new THREE.Vector3(0, 0, -overlapAmount));
+            labels[j].userData = { overlap: -overlapAmount };
+          } else {
+            // dont overwrite the overlap value if it is already set
+            if (labels[i].userData.overlap === undefined) {
+              labels[i].userData = { overlap: 0 };
+              labels[j].userData = { overlap: 0 };
+            }
+          }
+        }
+      }
+    }
     // Calculate the x,y,z coordinates of a point on a sphere
     function getCartesianCoords(lat, lon, radius) {
       const phi = (90 - lat) * Math.PI / 180;
@@ -199,6 +231,10 @@ fetch('./database/locations.json')
         // Update the label position
         labels[i].position.set(coords.x, coords.y, coords.z);
         labels[i].position.add(normal.clone().multiplyScalar(labelHeight + .2));
+        // if labels overlap then move y by overlap amount
+        if (labels[i].userData.overlap != 0) {
+          labels[i].position.add(new THREE.Vector3(0, 0, labels[i].userData.overlap));
+        }
 
       }
       earthMesh.rotation.y += rotationAmount;
