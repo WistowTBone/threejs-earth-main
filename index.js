@@ -18,8 +18,9 @@ fetch('./database/locations.json')
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, w / h, 0.1, 1000);
     camera.position.z = 40;
-    const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setSize(w, h);
+    renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
     THREE.ColorManagement.enabled = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -40,17 +41,17 @@ fetch('./database/locations.json')
 
     // Load Textures
     const material = new THREE.MeshPhongMaterial({
-      map: loader.load("./textures/BlueMarble.jpg"),
-      specularMap: loader.load("./textures/02_earthspec1k.jpg"),
-      bumpMap: loader.load("./textures/01_earthbump1k.jpg"),
-      bumpScale: 0.04,
+      map: loader.load("./textures/8k_earth_daymap.jpg"),
+      specularMap: loader.load("./textures/8k_earth_specular_map.jpg"),
+      bumpMap: loader.load("./textures/earth_bumpmap.jpg"),
+      bumpScale: 1,
     });
     const earthMesh = new THREE.Mesh(geometry, material);
     earthGroup.add(earthMesh);
 
     // Night Lights on Earth
     const lightsMat = new THREE.MeshBasicMaterial({
-      map: loader.load("./textures/SuperEarthLights.jpg"),
+      map: loader.load("./textures/8k_earth_nightmap.jpg"),
       blending: THREE.AdditiveBlending,
     });
     const lightsMesh = new THREE.Mesh(geometry, lightsMat);
@@ -58,12 +59,11 @@ fetch('./database/locations.json')
 
     // Clouds just above earth
     const cloudsMat = new THREE.MeshStandardMaterial({
-      map: loader.load("./textures/04_earthcloudmap.jpg"),
+      map: loader.load("./textures/8k_earth_clouds.jpg"),
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.95,
       blending: THREE.AdditiveBlending,
-      alphaMap: loader.load('./textures/05_earthcloudmaptrans.jpg'),
-      // alphaTest: 0.3,
+      alphaMap: loader.load('./textures/8k_earth_clouds_alpha.jpg'),
     });
     const cloudsMesh = new THREE.Mesh(geometry, cloudsMat);
     cloudsMesh.scale.setScalar(1.003);
@@ -172,12 +172,11 @@ fetch('./database/locations.json')
       return label;
     }
 
-
     function createLabelCanvas(text, color) {
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
       canvas.width = 256; // Set canvas width
-      canvas.height = 128; // Set canvas height to accommodate multiple lines
+      canvas.height = 128;// Set canvas height to accommodate multiple lines
       context.font = 'Bold 20px Arial';
       context.fillStyle = color;
       //context.fillText(text, 0, 80);
@@ -206,15 +205,12 @@ fetch('./database/locations.json')
       // Wrap and draw the text
       wrapText(context, text, 10, 50, canvas.width - 20, 20); // Adjust x, y, maxWidth, and lineHeight as needed
 
+
       return canvas;
     }
 
-    // Animation Loop
-    function animate() {
-      requestAnimationFrame(animate);
-      const rotationAmount = 0.0002;
-
-      // Amimate locations and labels
+    // Update Label Positions
+    function updateLabelPositions(rotationAmount) {
       for (let i = 0; i < locations.length; i++) {
         locations[i].longitude += rotationAmount * 180 / Math.PI;
         const coords = getCartesianCoords(locations[i].latitude, locations[i].longitude, 20);
@@ -235,8 +231,18 @@ fetch('./database/locations.json')
         if (labels[i].userData.overlap != 0) {
           labels[i].position.add(new THREE.Vector3(0, 0, labels[i].userData.overlap));
         }
-
       }
+    }
+
+    // Animation Loop
+    function animate() {
+      requestAnimationFrame(animate);
+      const rotationAmount = 0.0002;
+
+      // Amimate locations and labels
+      updateLabelPositions(rotationAmount);
+
+      // Rotate the earth, lights, clouds, and glow
       earthMesh.rotation.y += rotationAmount;
       lightsMesh.rotation.y += rotationAmount;
       cloudsMesh.rotation.y += rotationAmount * 1.5;
@@ -247,8 +253,10 @@ fetch('./database/locations.json')
 
     // Mouse over event
     function onMouseMove(event) {
-      mouseLoc.x = (event.clientX / w) * 2 - 1;
-      mouseLoc.y = -(event.clientY / h) * 2 + 1;
+      //      mouseLoc.x = (event.clientX / w) * 2 - 1;
+      //      mouseLoc.y = -(event.clientY / h) * 2 + 1;
+      mouseLoc.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouseLoc.y = - (event.clientY / window.innerHeight) * 2 + 1;
       raycaster.setFromCamera(mouseLoc, camera);
       for (let i = 0; i < locations.length; i++) {
         const intersects = raycaster.intersectObjects([labels[i]]);
@@ -268,8 +276,10 @@ fetch('./database/locations.json')
 
     // Mouse Click Event
     function onMouseClick(event) {
-      mouseLoc.x = (event.clientX / w) * 2 - 1;
-      mouseLoc.y = -(event.clientY / h) * 2 + 1;
+      //mouseLoc.x = (event.clientX / w) * 2 - 1;
+      //mouseLoc.y = -(event.clientY / h) * 2 + 1;
+      mouseLoc.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouseLoc.y = - (event.clientY / window.innerHeight) * 2 + 1;
       raycaster.setFromCamera(mouseLoc, camera);
       for (let i = 0; i < locations.length; i++) {
         const intersects = raycaster.intersectObjects([labels[i]]);
@@ -307,6 +317,7 @@ fetch('./database/locations.json')
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      updateLabelPositions(0);
     }
     // Event listeners
     window.addEventListener('resize', handleWindowResize, false);
