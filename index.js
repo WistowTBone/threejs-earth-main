@@ -8,20 +8,23 @@ fetch('./database/locations.json')
   .then(response => response.json())
   .then(data => {
     locations = data;
+
     //variable to store last text mesh
     let lastTextMesh = null;
     //set window variables
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-
+    //const w = window.innerWidth;
+    //const h = window.innerHeight;
+    const canvasContainer = document.getElementById("globeCanvas");
+    const w = canvasContainer.offsetWidth;
+    const h = canvasContainer.offsetHeight;
     //Set up Scene/camera/renderer
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, w / h, 0.1, 1000);
     camera.position.z = 40;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, canvas: canvasContainer });
     renderer.setSize(w, h);
     renderer.setPixelRatio(window.devicePixelRatio);
-    document.body.appendChild(renderer.domElement);
+    //document.body.appendChild(renderer.domElement);
     THREE.ColorManagement.enabled = true;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
@@ -38,6 +41,7 @@ fetch('./database/locations.json')
     const detail = 12;
     const loader = new THREE.TextureLoader();
     const geometry = new THREE.IcosahedronGeometry(20, detail);
+    //const halfSphere = new THREE.SphereGeometry(20.1,30,30,0,Math.PI,0,Math.PI);
 
     // Load Textures
     const material = new THREE.MeshPhongMaterial({
@@ -253,15 +257,18 @@ fetch('./database/locations.json')
 
     // Mouse over event
     function onMouseMove(event) {
-      //      mouseLoc.x = (event.clientX / w) * 2 - 1;
-      //      mouseLoc.y = -(event.clientY / h) * 2 + 1;
-      mouseLoc.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouseLoc.y = - (event.clientY / window.innerHeight) * 2 + 1;
+      // calculate pointer position in normalized device coordinates for Raycaster
+      // (-1 to +1) for both components
+      const rect = renderer.domElement.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      mouseLoc.x = (x / w) * 2 - 1;
+      mouseLoc.y = - (y / h) * 2 + 1;
       raycaster.setFromCamera(mouseLoc, camera);
       for (let i = 0; i < locations.length; i++) {
         const intersects = raycaster.intersectObjects([labels[i]]);
         if (intersects.length > 0) {
-          console.log('Mouse over location ' + i);
+          // set colour to yellow
           const newTexture = createLabelCanvas(locations[i].name, 'rgba(255, 255, 0, 1.0)');
           labels[i].material.map = new THREE.CanvasTexture(newTexture);
           labels[i].material.needsUpdate = true;
@@ -276,10 +283,13 @@ fetch('./database/locations.json')
 
     // Mouse Click Event
     function onMouseClick(event) {
-      //mouseLoc.x = (event.clientX / w) * 2 - 1;
-      //mouseLoc.y = -(event.clientY / h) * 2 + 1;
-      mouseLoc.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouseLoc.y = - (event.clientY / window.innerHeight) * 2 + 1;
+      // calculate pointer position in normalized device coordinates for Raycaster
+      // (-1 to +1) for both components
+      const rect = renderer.domElement.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      mouseLoc.x = (x / w) * 2 - 1;
+      mouseLoc.y = - (y / h) * 2 + 1;
       raycaster.setFromCamera(mouseLoc, camera);
       for (let i = 0; i < locations.length; i++) {
         const intersects = raycaster.intersectObjects([labels[i]]);
@@ -314,9 +324,11 @@ fetch('./database/locations.json')
 
     // Resize event
     function handleWindowResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      w = canvasContainer.offsetWidth;
+      h = canvasContainer.offsetHeight;
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setSize(w, h);
       updateLabelPositions(0);
     }
     // Event listeners
