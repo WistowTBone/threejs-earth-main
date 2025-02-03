@@ -15,8 +15,8 @@ fetch('./database/locations.json')
     //const w = window.innerWidth;
     //const h = window.innerHeight;
     const canvasContainer = document.getElementById("globeCanvas");
-    const w = canvasContainer.offsetWidth;
-    const h = canvasContainer.offsetHeight;
+    let w = canvasContainer.offsetWidth;
+    let h = canvasContainer.offsetHeight;
     //Set up Scene/camera/renderer
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, w / h, 0.1, 1000);
@@ -324,6 +324,8 @@ fetch('./database/locations.json')
 
     // Resize event
     function handleWindowResize() {
+      canvasContainer.style.width = '100%';
+      canvasContainer.style.height = '100%';
       w = canvasContainer.offsetWidth;
       h = canvasContainer.offsetHeight;
       camera.aspect = w / h;
