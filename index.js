@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from 'jsm/controls/OrbitControls.js';
 import { getFresnelMat } from "./src/getFresnelMat.js";
+import { GLTFLoader } from 'jsm/loaders/GLTFLoader.js';
 
 // Fetch the JSON locations file
 let locations = [];
@@ -17,6 +18,7 @@ fetch('./database/locations.json')
     const canvasContainer = document.getElementById("globeCanvas");
     let w = canvasContainer.offsetWidth;
     let h = canvasContainer.offsetHeight;
+    let totalEarthRotation = 0;
     //Set up Scene/camera/renderer
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, w / h, 0.1, 1000);
@@ -48,18 +50,18 @@ fetch('./database/locations.json')
       map: loader.load("./textures/8k_earth_daymap.jpg"),
       specularMap: loader.load("./textures/8k_earth_specular_map.jpg"),
       bumpMap: loader.load("./textures/earth_bumpmap.jpg"),
-      bumpScale: 1,
+      bumpScale: 2,
     });
     const earthMesh = new THREE.Mesh(geometry, material);
     earthGroup.add(earthMesh);
 
     // Night Lights on Earth
-    const lightsMat = new THREE.MeshBasicMaterial({
-      map: loader.load("./textures/8k_earth_nightmap.jpg"),
-      blending: THREE.AdditiveBlending,
-    });
-    const lightsMesh = new THREE.Mesh(geometry, lightsMat);
-    earthGroup.add(lightsMesh);
+    //const lightsMat = new THREE.MeshBasicMaterial({
+    //  map: loader.load("./textures/8k_earth_nightmap.jpg"),
+    //  blending: THREE.AdditiveBlending,
+    //});
+    //const lightsMesh = new THREE.Mesh(geometry, lightsMat);
+    //earthGroup.add(lightsMesh);
 
     // Clouds just above earth
     const cloudsMat = new THREE.MeshStandardMaterial({
@@ -79,10 +81,31 @@ fetch('./database/locations.json')
     glowMesh.scale.setScalar(1.01);
     earthGroup.add(glowMesh);
 
+    // Add hemisphere light
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff,2);
+    scene.add(hemiLight);
     //Add sunlight 
-    const sunLight = new THREE.DirectionalLight(0xffffff, 3.0);
-    sunLight.position.set(-20, 0.5, 1.5);
-    scene.add(sunLight);
+    //const sunLight = new THREE.DirectionalLight(0xffffff, 3.0);
+    //sunLight.position.set(0, 0, -125);
+    //scene.add(sunLight);
+
+    // get ISS model
+    const gltfloader = new GLTFLoader();
+    let iss = null;
+    let isslatitude = 0;
+    let isslongitude = 0;
+    gltfloader.load('models/ISS_stationary.glb', async (gltf) => {
+      iss = gltf.scene;
+      iss.traverse((child) => {
+        if (child.isMesh) {
+          child.geometry.center();
+        }
+      });
+      iss.scale.set(0.02, 0.02, 0.02);
+      setISSPosition(iss);
+      await scene.add(iss);
+      setInterval(setISSPosition, 5000, iss);
+    });
 
     // Add locations to the earth
     const locationsMesh = [];
@@ -128,12 +151,7 @@ fetch('./database/locations.json')
       for (let i = 0; i < labels.length; i++) {
         for (let j = i + 1; j < labels.length; j++) {
           const distance = labels[i].position.distanceTo(labels[j].position);
-          console.log(`Distance between Label ${i} and Label ${j} is ${distance}`);
           if (distance < labels[i].scale.y / 2) {
-            console.log(`Label ${i} is overlapping with Label ${j}`);
-            //console.log(`Label ${i} height is ${labels[i].scale.y}`);
-            //console.log(locations[i].name)
-            //console.log(locations[j].name)
             // Move the labels 
             const overlapAmount = labels[i].scale.y / 2;
             labels[i].position.add(new THREE.Vector3(0, 0, overlapAmount));
@@ -150,6 +168,7 @@ fetch('./database/locations.json')
         }
       }
     }
+
     // Calculate the x,y,z coordinates of a point on a sphere
     function getCartesianCoords(lat, lon, radius) {
       const phi = (90 - lat) * Math.PI / 180;
@@ -238,20 +257,58 @@ fetch('./database/locations.json')
       }
     }
 
+    async function setISSPosition(iss) {
+      try {
+        const response = await fetch('http://api.open-notify.org/iss-now.json');
+        const data = await response.json();
+        const issPosition = data.iss_position;
+        const lat = parseFloat(issPosition.latitude);
+        const lon = parseFloat(issPosition.longitude);
+        const coords = getCartesianCoords(lat, lon, 21.5);
+        isslatitude = lat;
+        isslongitude = lon + (totalEarthRotation * 180 / Math.PI);
+        iss.position.set(coords.x, coords.y, coords.z);
+        //console.log(coords);
+      } catch (error) {
+        console.error('Error loading JSON:', error);
+      }
+    }
+    // Update Label Positions
+    function updateISSPosition(rotationAmount) {
+      if (iss) {
+        isslongitude += rotationAmount * 180 / Math.PI;
+        const coords = getCartesianCoords(isslatitude, isslongitude, 21.5);
+        iss.position.set(coords.x, coords.y, coords.z);
+        //iss face origin
+        iss.lookAt(0, 0, 0);
+      } else {
+        console.log('ISS not loaded yet');
+      }
+    }
+
+
     // Animation Loop
     function animate() {
       requestAnimationFrame(animate);
       const rotationAmount = 0.0002;
 
+      // Update the total rotation amount
+      totalEarthRotation += rotationAmount;
+      if (totalEarthRotation > 2 * Math.PI) {
+        totalEarthRotation = 0;
+      }
+
       // Amimate locations and labels
       updateLabelPositions(rotationAmount);
-
+      updateISSPosition(rotationAmount);
+     
       // Rotate the earth, lights, clouds, and glow
       earthMesh.rotation.y += rotationAmount;
-      lightsMesh.rotation.y += rotationAmount;
+      //lightsMesh.rotation.y += rotationAmount;
       cloudsMesh.rotation.y += rotationAmount * 1.5;
       glowMesh.rotation.y += rotationAmount;
 
+      // Render the scene
       renderer.render(scene, camera);
     }
 
