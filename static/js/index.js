@@ -1,11 +1,13 @@
 import * as THREE from "three";
 import { OrbitControls } from 'jsm/controls/OrbitControls.js';
-import { getFresnelMat } from "./src/getFresnelMat.js";
+import { getFresnelMat } from "../src/getFresnelMat.js";
 import { GLTFLoader } from 'jsm/loaders/GLTFLoader.js';
+import getStarfield from "../src/getStarfield.js";
+
 
 // Fetch the JSON locations file
 let locations = [];
-fetch('./database/locations.json')
+fetch('static/src/locations.json')
   .then(response => response.json())
   .then(data => {
     locations = data;
@@ -47,9 +49,9 @@ fetch('./database/locations.json')
 
     // Load Textures
     const material = new THREE.MeshPhongMaterial({
-      map: loader.load("./textures/8k_earth_daymap.jpg"),
-      specularMap: loader.load("./textures/8k_earth_specular_map.jpg"),
-      bumpMap: loader.load("./textures/earth_bumpmap.jpg"),
+      map: loader.load("static/textures/8k_earth_daymap.jpg"),
+      specularMap: loader.load("static/textures/8k_earth_specular_map.jpg"),
+      bumpMap: loader.load("static/textures/earth_bumpmap.jpg"),
       bumpScale: 2,
     });
     const earthMesh = new THREE.Mesh(geometry, material);
@@ -57,19 +59,25 @@ fetch('./database/locations.json')
 
     // Night Lights on Earth
     //const lightsMat = new THREE.MeshBasicMaterial({
-    //  map: loader.load("./textures/8k_earth_nightmap.jpg"),
+    //  map: loader.load("static/textures/8k_earth_nightmap.jpg"),
     //  blending: THREE.AdditiveBlending,
     //});
     //const lightsMesh = new THREE.Mesh(geometry, lightsMat);
     //earthGroup.add(lightsMesh);
 
+    // Add Starfield
+    const starfield = getStarfield({ numStars: 20000 });
+    starfield.scale.set(3, 3, 3); // Scale the starfield to make it larger
+    scene.add(starfield);
+
+
     // Clouds just above earth
     const cloudsMat = new THREE.MeshStandardMaterial({
-      map: loader.load("./textures/8k_earth_clouds.jpg"),
+      map: loader.load("static/textures/8k_earth_clouds.jpg"),
       transparent: true,
       opacity: 0.95,
       blending: THREE.AdditiveBlending,
-      alphaMap: loader.load('./textures/8k_earth_clouds_alpha.jpg'),
+      alphaMap: loader.load('static/textures/8k_earth_clouds_alpha.jpg'),
     });
     const cloudsMesh = new THREE.Mesh(geometry, cloudsMat);
     cloudsMesh.scale.setScalar(1.003);
@@ -94,7 +102,7 @@ fetch('./database/locations.json')
     let iss = null;
     let isslatitude = 0;
     let isslongitude = 0;
-    gltfloader.load('models/ISS_stationary.glb', async (gltf) => {
+    gltfloader.load('static/models/ISS_stationary.glb', async (gltf) => {
       iss = gltf.scene;
       iss.traverse((child) => {
         if (child.isMesh) {
@@ -359,6 +367,11 @@ fetch('./database/locations.json')
           // Speak Name of Location
           const utterance = new SpeechSynthesisUtterance(locations[i].name);
           window.speechSynthesis.speak(utterance);
+
+          //Call Reporting for location
+          let location_url = "https://www.rocketspotter.com/location?id=".concat(locations[i].id)
+          window.open(location_url);
+
           { break; }
         } else {
           const newTexture = createLabelCanvas(locations[i].name, 'rgba(22, 255, 0, 1.0)');
