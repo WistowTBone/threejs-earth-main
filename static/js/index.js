@@ -75,7 +75,7 @@ fetch('static/src/locations.json')
     const cloudsMat = new THREE.MeshStandardMaterial({
       map: loader.load("static/textures/8k_earth_clouds.jpg"),
       transparent: true,
-      opacity: 0.95,
+      opacity: 1,
       blending: THREE.AdditiveBlending,
       alphaMap: loader.load('static/textures/8k_earth_clouds_alpha.jpg'),
     });
@@ -267,11 +267,10 @@ fetch('static/src/locations.json')
 
     async function setISSPosition(iss) {
       try {
-        const response = await fetch('http://api.open-notify.org/iss-now.json');
+        const response = await fetch('https://api.wheretheiss.at/v1/satellites/25544');
         const data = await response.json();
-        const issPosition = data.iss_position;
-        const lat = parseFloat(issPosition.latitude);
-        const lon = parseFloat(issPosition.longitude);
+        const lat = parseFloat(data.latitude);
+        const lon = parseFloat(data.longitude);
         const coords = getCartesianCoords(lat, lon, 21.5);
         isslatitude = lat;
         isslongitude = lon + (totalEarthRotation * 180 / Math.PI);
@@ -337,6 +336,11 @@ fetch('static/src/locations.json')
           const newTexture = createLabelCanvas(locations[i].name, 'rgba(255, 255, 0, 1.0)');
           labels[i].material.map = new THREE.CanvasTexture(newTexture);
           labels[i].material.needsUpdate = true;
+          // Set text label to the current location
+          let myDiv = document.getElementById("launches");
+          myDiv.innerHTML ="<h3>" + locations[i].name + "</h3>" + 
+            "<p># Launches: " + locations[i].count + "</p>" +
+            "<p>Next Launch: " + locations[i].next_launch + "</p>";
           { break; }
         } else {
           const newTexture = createLabelCanvas(locations[i].name, 'rgba(22, 255, 0, 1.0)');

@@ -9,6 +9,27 @@
     body {
       margin: 0;
     }
+    .launchesBox {
+      margin: 10px;
+      width: 180px;
+      position: absolute;
+      border-style: double;
+      z-index: 100;
+      background-image: linear-gradient(#a25cfd, #502fc4);
+      font-family: Arial;
+      font-weight: bold;
+      font-size: .4rem;
+      text-shadow: 1px 1px black;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center; /* Center the text horizontally */
+      word-wrap: break-word; /* Ensure text wraps */
+      overflow-wrap: break-word; /* Ensure text wraps */
+      padding: 10px; /* Add padding to create space around the text */
+    }
   </style>
   <script type="importmap">
 			{
@@ -22,11 +43,11 @@
 
 <body>
   <div style="width: 100%;">
-    <div style="width: 20%; height: 100vh; float: left; background: green;">
-      <h1>Rocket Spotter</h1>
-      <p>Click on the globe to see the next rocket launch</p>
+    <div id="launchesBox" class="launchesBox">
+      <h2>Launches</h2>
+      <div id="launches"></div>
     </div>
-    <div style="width: 80%; height: 100vh; float: right; background: black;">
+    <div style="width: 100%; height: 100vh; float: right; background: black;">
       <canvas id="globeCanvas" style="width: 100%; height: 100%;"></canvas>
     </div>
   </div>
