@@ -338,7 +338,7 @@ fetch('static/src/locations.json')
           labels[i].material.needsUpdate = true;
           // Set text label to the current location
           let myDiv = document.getElementById("launches");
-          myDiv.innerHTML ="<h3>" + locations[i].name + "</h3>" + 
+          myDiv.innerHTML ="<p>" + locations[i].name + "</p>" + 
             "<p># Launches: " + locations[i].count + "</p>" +
             "<p>Next Launch: " + locations[i].next_launch + "</p>";
           { break; }
