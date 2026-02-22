@@ -1,19 +1,46 @@
 import * as THREE from "three";
-import { OrbitControls } from 'jsm/controls/OrbitControls.js';
-import { getFresnelMat } from "../src/getFresnelMat.js";
-import { GLTFLoader } from 'jsm/loaders/GLTFLoader.js';
-import getStarfield from "../src/getStarfield.js";
-
+import { step, normalWorldGeometry, output, texture, vec3, vec4, normalize, positionWorld, bumpMap, cameraPosition, color, uniform, mix, uv, max } from 'three/tsl';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // Fetch the JSON locations file
 let locations = [];
+// Global fallback: if a geometry is queried for `uv` and doesn't have it,
+// create a zeroed uv attribute so node/materials that expect `uv` don't throw.
+;(function(){
+  const proto = THREE.BufferGeometry && THREE.BufferGeometry.prototype;
+  if (proto && !proto._uvFallbackInstalled) {
+    const origGet = proto.getAttribute;
+    proto.getAttribute = function(name){
+      const attr = origGet.call(this, name);
+      if (!attr && name === 'uv') {
+        try {
+          const pos = origGet.call(this, 'position');
+          const count = pos ? pos.count : 0;
+          const uvArray = new Float32Array(count * 2);
+          for (let i = 0; i < count; i++) { uvArray[i*2] = 0; uvArray[i*2+1] = 0; }
+          const bufferAttr = new THREE.BufferAttribute(uvArray, 2);
+          this.setAttribute('uv', bufferAttr);
+          return bufferAttr;
+        } catch (e) {
+          console.warn('uv fallback failed:', e);
+          return null;
+        }
+      }
+      return attr;
+    };
+    proto._uvFallbackInstalled = true;
+  }
+})();
 fetch('static/src/locations.json')
   .then(response => response.json())
-  .then(data => {
+  .then(async data => {
     locations = data;
 
     //variable to store last text mesh
     let lastTextMesh = null;
+    // currently hovered label index to avoid updating all labels
+    let hoveredLabelIndex = -1;
     //set window variables
     //const w = window.innerWidth;
     //const h = window.innerHeight;
@@ -25,77 +52,178 @@ fetch('static/src/locations.json')
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, w / h, 0.1, 1000);
     camera.position.z = 40;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, canvas: canvasContainer });
-    renderer.setSize(w, h);
+    let renderer;
+
+    // Use WebGPU renderer unconditionally (from importmap 'three' build)
+    renderer = new THREE.WebGPURenderer();
     renderer.setPixelRatio(window.devicePixelRatio);
-    //document.body.appendChild(renderer.domElement);
-    THREE.ColorManagement.enabled = true;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    renderer.setSize(w, h);
+    // Hide the original canvas element (we'll use renderer.domElement)
+    try {
+      canvasContainer.style.display = 'none';
+      const parent = canvasContainer.parentElement || document.body;
+      parent.appendChild(renderer.domElement);
+      renderer.domElement.style.width = '100%';
+      renderer.domElement.style.height = '100%';
+    } catch (e) {
+      console.warn('Could not append WebGPU renderer DOM element, continuing:', e);
+    }
+    // Some renderer properties may not exist on WebGPURenderer; guard them
+    try { THREE.ColorManagement.enabled = true; } catch (e) {}
+    try { renderer.toneMapping = THREE.ACESFilmicToneMapping; } catch (e) {}
+    try { renderer.outputColorSpace = THREE.LinearSRGBColorSpace; } catch (e) {}
+ 
 
     //mouse and raycaster
     const mouseLoc = new THREE.Vector2();
     const raycaster = new THREE.Raycaster();
     raycaster.camera = camera
 
-    //Create Earth
+    // Create globe using WebGPU node materials (TSL)
     const earthGroup = new THREE.Group();
     scene.add(earthGroup);
-    new OrbitControls(camera, renderer.domElement);
-    const detail = 12;
-    const loader = new THREE.TextureLoader();
-    const geometry = new THREE.IcosahedronGeometry(20, detail);
-    //const halfSphere = new THREE.SphereGeometry(20.1,30,30,0,Math.PI,0,Math.PI);
-
-    // Load Textures
-    const material = new THREE.MeshPhongMaterial({
-      map: loader.load("static/textures/8k_earth_daymap.jpg"),
-      specularMap: loader.load("static/textures/8k_earth_specular_map.jpg"),
-      bumpMap: loader.load("static/textures/earth_bumpmap.jpg"),
-      bumpScale: 2,
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enablePan = false;
+    controls.enableDamping = true;
+    // Zoom limits (distance from origin)
+    const MIN_ZOOM = 21;  // Just above planet surface (radius 20)
+    const MAX_ZOOM = 120;
+    controls.minDistance = MIN_ZOOM;
+    controls.maxDistance = MAX_ZOOM;
+    let _zoomNoticeTimeout = null;
+    function showZoomNotice(text = 'Maximum zoom reached'){
+      let el = document.getElementById('zoomNotice');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'zoomNotice';
+        el.style.position = 'fixed';
+        el.style.left = '50%';
+        el.style.transform = 'translateX(-50%)';
+        el.style.bottom = '14px';
+        el.style.zIndex = '9999';
+        el.style.padding = '8px 12px';
+        el.style.background = 'rgba(0,0,0,0.7)';
+        el.style.color = '#fff';
+        el.style.fontFamily = 'Arial, sans-serif';
+        el.style.borderRadius = '4px';
+        el.style.fontSize = '0.9rem';
+        document.body.appendChild(el);
+      }
+      el.textContent = text;
+      el.style.display = 'block';
+      if (_zoomNoticeTimeout) clearTimeout(_zoomNoticeTimeout);
+      _zoomNoticeTimeout = setTimeout(()=>{ el.style.display = 'none'; }, 2200);
+    }
+    controls.addEventListener('change', () => {
+      // OrbitControls handles the clamping internally via minDistance/maxDistance
     });
-    const earthMesh = new THREE.Mesh(geometry, material);
-    earthGroup.add(earthMesh);
 
-    // Night Lights on Earth
-    //const lightsMat = new THREE.MeshBasicMaterial({
-    //  map: loader.load("static/textures/8k_earth_nightmap.jpg"),
-    //  blending: THREE.AdditiveBlending,
-    //});
-    //const lightsMesh = new THREE.Mesh(geometry, lightsMat);
-    //earthGroup.add(lightsMesh);
+    // Sun (directional light)
+    const sun = new THREE.DirectionalLight('#ffffff', 2);
+    sun.position.set(0, 0, 125);
+    scene.add(sun);
 
-    // Add Starfield
-    const starfield = getStarfield({ numStars: 20000 });
-    starfield.scale.set(3, 3, 3); // Scale the starfield to make it larger
-    scene.add(starfield);
+    // --- UNIFORMS ---
+    // Define colors for atmosphere and surface roughness values
+    const atmosphereDayColor = uniform(color('#4db2ff')); // Light blue for daytime atmosphere
+    const atmosphereTwilightColor = uniform(color('#bc490b')); // Orange for twilight atmosphere
+    const roughnessLow = uniform(0.25); // Minimum surface roughness
+    const roughnessHigh = uniform(0.35); // Maximum surface roughness
+
+    // --- TEXTURES ---
+    // Load textures for day, night, and bump/roughness/clouds
+    const textureLoader = new THREE.TextureLoader();
+
+    // Day texture: Earth's surface during daylight
+    const dayTexture = textureLoader.load('textures/planets/earth_day_4096.jpg');
+    dayTexture.colorSpace = THREE.SRGBColorSpace;
+    dayTexture.anisotropy = 8;
+    dayTexture.wrapS = THREE.RepeatWrapping;
+    dayTexture.wrapT = THREE.ClampToEdgeWrapping;
+
+    // Night texture: Earth's surface during nighttime
+    const nightTexture = textureLoader.load('textures/planets/earth_night_4096.jpg');
+    nightTexture.colorSpace = THREE.SRGBColorSpace;
+    nightTexture.anisotropy = 8;
+    nightTexture.wrapS = THREE.RepeatWrapping;
+    nightTexture.wrapT = THREE.ClampToEdgeWrapping;
+
+    // Bump/roughness/clouds texture: used for surface detail and cloud strength
+    const bumpRoughnessCloudsTexture = textureLoader.load('textures/planets/earth_bump_roughness_clouds_4096.jpg');
+    bumpRoughnessCloudsTexture.anisotropy = 8;
+    bumpRoughnessCloudsTexture.wrapS = THREE.RepeatWrapping;
+    bumpRoughnessCloudsTexture.wrapT = THREE.ClampToEdgeWrapping;
 
 
-    // Clouds just above earth
-    const cloudsMat = new THREE.MeshStandardMaterial({
-      map: loader.load("static/textures/8k_earth_clouds.jpg"),
-      transparent: true,
-      opacity: 1,
-      blending: THREE.AdditiveBlending,
-      alphaMap: loader.load('static/textures/8k_earth_clouds_alpha.jpg'),
-    });
-    const cloudsMesh = new THREE.Mesh(geometry, cloudsMat);
-    cloudsMesh.scale.setScalar(1.003);
-    earthGroup.add(cloudsMesh);
+    // --- UV COORDINATE OFFSET ---
+    // Offset UV by 0.5 in U coordinate to rotate textures 180 degrees
+    const rotatedUV = uv().add(vec3(0.5, 0, 0));
 
-    // Blue glow around earth
-    const fresnelMat = getFresnelMat();
-    const glowMesh = new THREE.Mesh(geometry, fresnelMat);
-    glowMesh.scale.setScalar(1.01);
-    earthGroup.add(glowMesh);
+    // --- NODE CALCULATIONS FOR SHADING ---
+    // Calculate view direction and fresnel effect for atmosphere shading
+    const viewDirection = positionWorld.sub(cameraPosition).normalize();
+    // Fresnel: how much the surface faces the camera (for rim lighting/atmosphere)
+    const fresnel = viewDirection.dot(normalWorldGeometry).abs().oneMinus().toVar();
+    // Sun orientation: how much the surface faces the sun (for day/night and atmosphere color)
+    const sunOrientation = normalWorldGeometry.dot(normalize(sun.position)).toVar();
+    // Blend between twilight and day atmosphere colors based on sun orientation
+    const atmosphereColor = mix(atmosphereTwilightColor, atmosphereDayColor, sunOrientation.smoothstep(-0.25, 0.75));
 
-    // Add hemisphere light
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff,2);
-    scene.add(hemiLight);
-    //Add sunlight 
-    //const sunLight = new THREE.DirectionalLight(0xffffff, 3.0);
-    //sunLight.position.set(0, 0, -125);
-    //scene.add(sunLight);
+    // --- GLOBE MATERIAL SETUP ---
+    // Create a node-based material for the globe
+    const globeMaterial = new THREE.MeshStandardNodeMaterial();
+
+    // Calculate cloud strength from bump/roughness/clouds texture
+    const cloudsStrength = texture(bumpRoughnessCloudsTexture, rotatedUV).b.smoothstep(0.2, 1);
+    // Blend day texture with white based on cloud strength
+    globeMaterial.colorNode = mix(texture(dayTexture, rotatedUV), vec3(1), cloudsStrength.mul(2));
+
+    // Compute roughness from bump/roughness/clouds texture and cloud strength
+    const roughness = max(
+      texture(bumpRoughnessCloudsTexture, uv()).g,
+      step(0.01, cloudsStrength)
+    );
+    globeMaterial.roughnessNode = roughness.remap(0, 1, roughnessLow, roughnessHigh);
+
+    // Night texture for the globe
+    const night = texture(nightTexture, rotatedUV);
+    // How much the surface is in daylight (for blending day/night textures)
+    const dayStrength = sunOrientation.smoothstep(-0.25, 0.5);
+
+    // Atmosphere blending based on sun orientation and fresnel
+    const atmosphereDayStrength = sunOrientation.smoothstep(-0.5, 1);
+    const atmosphereMix = atmosphereDayStrength.mul(fresnel.pow(2)).clamp(0, 1);
+
+    // Final color output: blend night, day, and atmosphere colors
+    let finalOutput = mix(night.rgb, output.rgb, dayStrength);
+    finalOutput = mix(finalOutput, atmosphereColor, atmosphereMix);
+    globeMaterial.outputNode = vec4(finalOutput, output.a);
+
+    // Bump mapping for globe surface elevation
+    const bumpElevation = max(
+      texture(bumpRoughnessCloudsTexture, rotatedUV).r,
+      cloudsStrength
+    );
+    const BUMP_SCALE = 1.0; // Increase for more exaggeration
+    globeMaterial.normalNode = bumpMap(bumpElevation.mul(BUMP_SCALE));
+    
+    // Create the globe mesh and add to scene
+    const sphereGeometry = new THREE.SphereGeometry(20, 64, 64);
+    const globe = new THREE.Mesh(sphereGeometry, globeMaterial);
+    scene.add(globe);
+
+    // --- ATMOSPHERE MATERIAL SETUP ---
+    // Create a transparent, back-side mesh for the atmosphere
+    const atmosphereMaterial = new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide, transparent: true });
+    // Alpha for atmosphere: rim effect and day strength
+    let alpha = fresnel.remap(0.73, 1, 1, 0).pow(3);
+    alpha = alpha.mul(sunOrientation.smoothstep(-0.5, 1));
+    atmosphereMaterial.outputNode = vec4(atmosphereColor, alpha);
+
+    // Create the atmosphere mesh, scale it up, and add to scene
+    const atmosphere = new THREE.Mesh(sphereGeometry, atmosphereMaterial);
+    atmosphere.scale.setScalar(1.06);
+    scene.add(atmosphere);
 
     // get ISS model
     const gltfloader = new GLTFLoader();
@@ -119,6 +247,8 @@ fetch('static/src/locations.json')
     const locationsMesh = [];
     const labels = [];
     const labelHeight = 2;
+    const labelColor = 'rgba(0, 255, 255, 1.0)';
+    const labelHoverColor = 'rgba(255, 255, 0, 1.0)';
 
     for (let i = 0; i < locations.length; i++) {
       const coords = getCartesianCoords(locations[i].latitude, locations[i].longitude, 20);
@@ -190,7 +320,7 @@ fetch('static/src/locations.json')
     //function to create text label
     function textLabel(text, x, y, z, normal) {
       // Create the label
-      const labelTexture = new THREE.CanvasTexture(createLabelCanvas(text, 'rgba(22, 255, 0, 1.0)'));
+      const labelTexture = new THREE.CanvasTexture(createLabelCanvas(text, labelColor));
       const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture });
       const label = new THREE.Sprite(labelMaterial);
 
@@ -294,10 +424,20 @@ fetch('static/src/locations.json')
     }
 
 
-    // Animation Loop
+    // Animation Loop (use WebGPU renderer animation loop)
     function animate() {
-      requestAnimationFrame(animate);
       const rotationAmount = 0.0002;
+
+      // Check zoom limits and show warnings
+      const camDist = camera.position.length();
+      if (camDist >= MAX_ZOOM - 0.5) {
+        showZoomNotice('Maximum zoom reached');
+      }
+      if (camDist <= MIN_ZOOM + 0.5) {
+        showZoomNotice('You need glasses'); // fun message for minimum zoom
+      }
+
+      // Sun stays fixed at world position; as Earth rotates, day/night boundary moves across it
 
       // Update the total rotation amount
       totalEarthRotation += rotationAmount;
@@ -305,15 +445,13 @@ fetch('static/src/locations.json')
         totalEarthRotation = 0;
       }
 
-      // Amimate locations and labels
+      // Animate locations and labels
       updateLabelPositions(rotationAmount);
       updateISSPosition(rotationAmount);
-     
-      // Rotate the earth, lights, clouds, and glow
-      earthMesh.rotation.y += rotationAmount;
-      //lightsMesh.rotation.y += rotationAmount;
-      cloudsMesh.rotation.y += rotationAmount * 1.5;
-      glowMesh.rotation.y += rotationAmount;
+
+      // Rotate the globe and atmosphere
+      if (typeof globe !== 'undefined') globe.rotation.y += rotationAmount;
+      if (typeof atmosphere !== 'undefined') atmosphere.rotation.y += rotationAmount;
 
       // Render the scene
       renderer.render(scene, camera);
@@ -321,66 +459,73 @@ fetch('static/src/locations.json')
 
     // Mouse over event
     function onMouseMove(event) {
-      // calculate pointer position in normalized device coordinates for Raycaster
-      // (-1 to +1) for both components
       const rect = renderer.domElement.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       mouseLoc.x = (x / w) * 2 - 1;
       mouseLoc.y = - (y / h) * 2 + 1;
       raycaster.setFromCamera(mouseLoc, camera);
-      for (let i = 0; i < locations.length; i++) {
-        const intersects = raycaster.intersectObjects([labels[i]]);
-        if (intersects.length > 0) {
-          // set colour to yellow
-          const newTexture = createLabelCanvas(locations[i].name, 'rgba(255, 255, 0, 1.0)');
-          labels[i].material.map = new THREE.CanvasTexture(newTexture);
-          labels[i].material.needsUpdate = true;
-          // Set text label to the current location
+
+      const intersects = raycaster.intersectObjects(labels);
+      if (intersects.length > 0) {
+        const hitLabel = intersects[0].object;
+        const idx = labels.indexOf(hitLabel);
+        if (idx !== hoveredLabelIndex) {
+          // revert previous hovered label
+          if (hoveredLabelIndex >= 0 && labels[hoveredLabelIndex]) {
+            const canvas = createLabelCanvas(locations[hoveredLabelIndex].name, labelColor);
+            const tex = labels[hoveredLabelIndex].material.map;
+            if (tex) { tex.image = canvas; tex.needsUpdate = true; }
+          }
+          // set new hovered label
+          hoveredLabelIndex = idx;
+          const canvas = createLabelCanvas(locations[idx].name, labelHoverColor);
+          const texNew = labels[idx].material.map;
+          if (texNew) { texNew.image = canvas; texNew.needsUpdate = true; }
+
+          // update info box
           let myDiv = document.getElementById("launches");
-          myDiv.innerHTML ="<p>" + locations[i].name + "</p>" + 
-            "<p># Launches: " + locations[i].count + "</p>" +
-            "<p>Next Launch: " + locations[i].next_launch + "</p>";
-          { break; }
-        } else {
-          const newTexture = createLabelCanvas(locations[i].name, 'rgba(22, 255, 0, 1.0)');
-          labels[i].material.map = new THREE.CanvasTexture(newTexture);
-          labels[i].material.needsUpdate = true;
+          myDiv.innerHTML = "<p>" + locations[idx].name + "</p>" +
+            "<p># Launches: " + locations[idx].count + "</p>" +
+            "<p>Next Launch: " + locations[idx].next_launch + "</p>";
         }
+      } else {
+        // no intersection -> revert any previously hovered label
+        if (hoveredLabelIndex >= 0 && labels[hoveredLabelIndex]) {
+          const canvas = createLabelCanvas(locations[hoveredLabelIndex].name, labelColor);
+          const tex = labels[hoveredLabelIndex].material.map;
+          if (tex) { tex.image = canvas; tex.needsUpdate = true; }
+          hoveredLabelIndex = -1;
+        }
+        // clear info box
+        let myDiv = document.getElementById("launches");
+        myDiv.innerHTML = "";
       }
     }
 
     // Mouse Click Event
     function onMouseClick(event) {
-      // calculate pointer position in normalized device coordinates for Raycaster
-      // (-1 to +1) for both components
       const rect = renderer.domElement.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       mouseLoc.x = (x / w) * 2 - 1;
       mouseLoc.y = - (y / h) * 2 + 1;
       raycaster.setFromCamera(mouseLoc, camera);
-      for (let i = 0; i < locations.length; i++) {
-        const intersects = raycaster.intersectObjects([labels[i]]);
-        if (intersects.length > 0) {
-          // Set colour to red
-          const newTexture = createLabelCanvas(locations[i].name, 'rgba(255, 0, 0, 1.0)');
-          labels[i].material.map = new THREE.CanvasTexture(newTexture);
-          labels[i].material.needsUpdate = true;
 
-          // Speak Name of Location
+      const intersects = raycaster.intersectObjects(labels);
+      if (intersects.length > 0) {
+        const hitLabel = intersects[0].object;
+        const i = labels.indexOf(hitLabel);
+        if (i >= 0) {
+          const canvas = createLabelCanvas(locations[i].name, 'rgba(255, 0, 0, 1.0)');
+          const tex = labels[i].material.map;
+          if (tex) { tex.image = canvas; tex.needsUpdate = true; }
+
           const utterance = new SpeechSynthesisUtterance(locations[i].name);
           window.speechSynthesis.speak(utterance);
 
-          //Call Reporting for location
-          let location_url = "https://www.rocketspotter.com/location?id=".concat(locations[i].id)
+          let location_url = "https://www.rocketspotter.com/location?id=".concat(locations[i].id);
           window.open(location_url);
-
-          { break; }
-        } else {
-          const newTexture = createLabelCanvas(locations[i].name, 'rgba(22, 255, 0, 1.0)');
-          labels[i].material.map = new THREE.CanvasTexture(newTexture);
-          labels[i].material.needsUpdate = true;
         }
       }
     }
@@ -393,19 +538,34 @@ fetch('static/src/locations.json')
       }
     }
 
-    // Start the animation loop
-    animate();
+    // Start the renderer animation loop (WebGPU)
+    try {
+      renderer.setAnimationLoop(animate);
+    } catch (e) {
+      // fallback to requestAnimationFrame if setAnimationLoop not available
+      (function loop(){ requestAnimationFrame(loop); animate(); })();
+    }
 
     // Resize event
     function handleWindowResize() {
-      canvasContainer.style.width = '100%';
-      canvasContainer.style.height = '100%';
-      w = canvasContainer.offsetWidth;
-      h = canvasContainer.offsetHeight;
-      camera.aspect = w / h;
+      // Set canvas size to the larger of globeContainer's width or height
+      const container = document.getElementById('globeContainer');
+      const containerWidth = container.offsetWidth;
+      const containerHeight = container.offsetHeight;
+      const size = Math.max(containerWidth, containerHeight);
+      w = size;
+      h = size;
+      renderer.setSize(w, h, true);
+      renderer.domElement.style.width = w + 'px';
+      renderer.domElement.style.height = h + 'px';
+      camera.aspect = 1;
       camera.updateProjectionMatrix();
-      renderer.setSize(w, h);
       updateLabelPositions(0);
+      // Ensure camera and controls are centered on the globe
+      if (typeof controls !== 'undefined') {
+        controls.target.set(0, 0, 0);
+        controls.update();
+      }
     }
     // Event listeners
     window.addEventListener('resize', handleWindowResize, false);

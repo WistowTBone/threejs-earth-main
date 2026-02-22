@@ -163,7 +163,7 @@ fetch('static/src/locations.json')
     //function to create text label
     function textLabel(text, x, y, z, normal) {
       // Create the label
-      const labelTexture = new THREE.CanvasTexture(createLabelCanvas(text, 'rgba(22, 255, 0, 1.0)'));
+      const labelTexture = new THREE.CanvasTexture(createLabelCanvas(text, 'rgba(255, 255, 0, 1.0)'));
       const labelMaterial = new THREE.SpriteMaterial({ map: labelTexture });
       const label = new THREE.Sprite(labelMaterial);
 

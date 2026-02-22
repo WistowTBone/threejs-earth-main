@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import { OrbitControls } from 'jsm/controls/OrbitControls.js';
-import { getFresnelMat } from "./src/getFresnelMat.js";
 
 // Fetch the JSON locations file
 let locations = [];

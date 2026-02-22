@@ -6,52 +6,99 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Rocket Spotter</title>
   <style>
+    #zoomNotice {
+      position: fixed;
+      left: 50%;
+      bottom: 14px;
+      z-index: 9999;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      font-family: Arial, sans-serif;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      display: none;
+      transform: translateX(-50%);
+    }
+  </style>
+  <style>
     body {
       margin: 0;
     }
+
     .launchesBox {
       margin: 10px;
       width: 180px;
       position: absolute;
       border-style: double;
       z-index: 100;
-      background-image: linear-gradient(#a25cfd, #502fc4);
+      background-image: linear-gradient(#2e0267, #502fc4);
       font-family: Arial;
-      font-weight: bold;
-      font-size: .7rem;
+      font-weight: normal;
+      font-size: .5rem;
       text-shadow: 1px 1px black;
       color: white;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      text-align: center; /* Center the text horizontally */
-      word-wrap: break-word; /* Ensure text wraps */
-      overflow-wrap: break-word; /* Ensure text wraps */
-      padding: 10px; /* Add padding to create space around the text */
+      text-align: center;
+      /* Center the text horizontally */
+      word-wrap: break-word;
+      /* Ensure text wraps */
+      overflow-wrap: break-word;
+      /* Ensure text wraps */
+      padding: 10px;
+      /* Add padding to create space around the text */
+    }
+
+    #globeContainer {
+      width: 100%;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: black;
+    }
+
+    #globeCanvas {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
     }
   </style>
   <script type="importmap">
 			{
 				"imports": {
-					"three": "https://cdn.jsdelivr.net/npm/three@0.172/build/three.module.js",
-          "jsm/": "https://cdn.jsdelivr.net/npm/three@0.172/examples/jsm/"
+					"three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.webgpu.js",
+					"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.webgpu.js",
+					"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.tsl.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"
         }
 			}
 		</script>
 </head>
 
 <body>
-  <div style="width: 100%;">
-    <div id="launchesBox" class="launchesBox">
-      <h3>Launches</h3>
-      <div id="launches"></div>
-    </div>
-    <div style="width: 100%; height: 100vh; float: right; background: black;">
-      <canvas id="globeCanvas" style="width: 100%; height: 100%;"></canvas>
-    </div>
+  <div id="launchesBox" class="launchesBox">
+    <h3>Launches</h3>
+    <div id="launches"></div>
   </div>
-  <script type="module" src="/static/js/index.js"></script>
+  <div id="globeContainer">
+    <canvas id="globeCanvas"></canvas>
+  </div>
+  </div>
+  <script>
+    (function () {
+      const s = document.createElement('script');
+      s.type = 'module';
+      s.src = '/static/js/index.js';
+      document.body.appendChild(s);
+    })();
+  </script>
 </body>
 
-</html> 
+</html>
